@@ -10,67 +10,45 @@ import SwiftData
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
+    @Query(sort: SortDescriptor(\.timestamp, ordering: .descending)) private var history: [Item]
+
+    @State private var selection: Panel = .bookmarks
+    @StateObject private var page = WebPage()
 
     var body: some View {
-        NavigationViewWrapper {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
-                    }
-                }
-                .onDelete(perform: deleteItems)
-            }
-#if os(macOS)
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
-#endif
-            .toolbar {
-#if os(iOS)
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-#endif
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
+        HStack(spacing: 0) {
+            IconSidebarView(selection: $selection)
+
+            Group {
+                switch selection {
+                case .bookmarks:
+                    BookmarkCollectionView(onOpen: { entry in
+                        page.load(entry.url)
+                        selection = .browser
+                    })
+                case .browser:
+                    BrowseView(page: page)
+                case .recent:
+                    RecentView(history: history, onOpen: { url in
+                        page.load(url)
+                        selection = .browser
+                    })
+                case .manage:
+                    BookmarkCollectionView(onOpen: { entry in
+                        page.load(entry.url)
+                        selection = .browser
+                    })
                 }
             }
-        }
-    }
+            .frame(minWidth: 320, minHeight: 400)
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
+            InfoPanel(page: page)
         }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
+        .onAppear {
+            page.onDidFinishLoading = { title, url in
+                modelContext.insert(Item(title: title, url: url.absoluteString))
             }
         }
-    }
-}
-
-fileprivate struct NavigationViewWrapper<Content: View>: View {
-    let content: () -> Content
-
-    var body: some View {
-#if os(macOS)
-        NavigationSplitView {
-            content()
-        } detail: {
-            Text("Select an item")
-        }
-#else
-        content()
-#endif
     }
 }
 
